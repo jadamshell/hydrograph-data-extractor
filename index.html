@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Storm Event Water Level Data</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: auto;
+      padding: 1rem;
+    }
+
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+
+    #result {
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hydrograph Data Extractor</h1>
+  <input type="file" id="csvFile" accept=".csv" />
+  <button id="processData">Process Data</button>
+  <div id="result"></div>
+  <script>
+    function processDataForSite(waterLevels) {
+  const initialLevel = waterLevels[0].waterLevel;
+  const peakLevelData = waterLevels.reduce((max, data) => data.waterLevel > max.waterLevel ? data : max);
+
+  const timeToPeak = (new Date(peakLevelData.dateTime) - new Date(waterLevels[0].dateTime)) / 3600000;
+  const rateOfIncrease = (peakLevelData.waterLevel - initialLevel) / timeToPeak;
+
+  const lastDataPoint = waterLevels[waterLevels.length - 1];
+  const recessionTimeDiff = (new Date(lastDataPoint.dateTime) - new Date(peakLevelData.dateTime)) / 3600000;
+  const recessionRate = (peakLevelData.waterLevel - lastDataPoint.waterLevel) / recessionTimeDiff;
+
+  return {
+    rateOfIncrease,
+    peakLevel: peakLevelData.waterLevel,
+    recessionRate,
+    timeToPeak: timeToPeak * 60
+  };
+}
+
+    document.getElementById('processData').addEventListener('click', () => {
+      const fileInput = document.getElementById('csvFile');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        alert('Please upload a .csv file.');
+        return;
+      }
+
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const data = event.target.result;
+        const lines = data.split('\n');
+        const headers = lines[0].split('\t');
+
+        const results = [];
+                for (let i = 1; i < headers.length; i++) {
+          const siteName = headers[i];
+          const waterLevels = lines.slice(1).map(line => {
+            const values = line.split('\t');
+            return { dateTime: values[0], waterLevel: parseFloat(values[i]) };
+          }).filter(data => !isNaN(data.waterLevel));
+
+          if (waterLevels.length === 0) {
+            continue;
+          }
+
+          const result = processDataForSite(waterLevels);
+          results.push({ siteName, ...result });
+        }
+
+        let csvContent = 'Site,Rate of Increase (m/h),Peak Water Level (m),Recession Rate (m/h),Time to Peak (min)\n';
+        for (const result of results) {
+          csvContent += `${result.siteName},${result.rateOfIncrease.toFixed(4)},${result.peakLevel.toFixed(4)},${result.recessionRate.toFixed(4)},${result.timeToPeak.toFixed(2)}\n`;
+        }
+
+        const csvBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const csvUrl = URL.createObjectURL(csvBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = csvUrl;
+        downloadLink.download = 'results.csv';
+        downloadLink.textContent = 'Download Results CSV';
+
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '';
+        resultDiv.appendChild(downloadLink);
+      };
+
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>
